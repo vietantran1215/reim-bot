@@ -86,9 +86,10 @@ A learner completing this project should be able to explain and implement:
 11. Policy version filtering.
 12. Citation generation from trusted retrieval metadata.
 13. Retrieval evaluation.
-14. Generation evaluation.
-15. Latency and token-cost trade-offs.
-16. Failure analysis across ingestion, retrieval, context construction, and generation.
+14. RAGAS-based RAG evaluation.
+15. Generation evaluation.
+16. Latency and token-cost trade-offs.
+17. Failure analysis across ingestion, retrieval, context construction, and generation.
 
 The learner must not merely implement a final pipeline.
 
@@ -292,11 +293,40 @@ Retrieval evaluation must not require a paid generation provider.
 
 ### Evaluation
 
-Default free metrics should be implemented directly in Python.
+RAGAS is a **mandatory evaluation framework** for this project.
 
-Ragas may be added for generation-quality metrics when an evaluator model is available.
+Use RAGAS from the first Basic RAG baseline and keep it throughout every later phase so results remain comparable.
 
-Do not make paid LLM-as-a-judge evaluation mandatory.
+Mandatory RAGAS metrics:
+
+- Faithfulness
+- Response Relevancy / Answer Relevancy
+- Context Precision
+- Context Recall
+
+RAGAS does not replace deterministic retrieval metrics.
+
+Also compute directly in Python:
+
+- Hit Rate@K
+- Recall@K
+- Precision@K
+- MRR
+- nDCG@K
+- route accuracy where applicable
+- citation validity
+- abstention correctness
+
+Some RAGAS metrics require an evaluator LLM and/or embedding model.
+
+The evaluator must be configurable.
+
+Preferred order:
+
+1. local/free evaluator when practical
+2. configured API evaluator when higher evaluation quality is desired
+
+RAGAS itself is mandatory; a paid evaluator provider is not.
 
 ---
 
@@ -345,6 +375,8 @@ reim-bot/
 ├── evals/
 │   ├── dataset.json
 │   ├── run.py
+│   ├── ragas_eval.py
+│   ├── retrieval_metrics.py
 │   └── reports/
 │
 ├── tests/
@@ -1188,15 +1220,33 @@ documents
 -> generation
 ```
 
-### Baseline metrics
+### Baseline evaluation
+
+Phase 1 must already have a small golden evaluation dataset.
+
+Recommended minimum:
+
+```text
+20–30 cases
+```
+
+Run both deterministic retrieval metrics and RAGAS.
 
 Record:
 
+- Hit Rate@K
 - Recall@K
+- Precision@K
 - MRR
+- RAGAS Faithfulness
+- RAGAS Response Relevancy / Answer Relevancy
+- RAGAS Context Precision
+- RAGAS Context Recall
 - retrieval latency
 - end-to-end latency
 - context size
+
+This Phase 1 report becomes the baseline used by every later phase.
 
 ### Acceptance criteria
 
@@ -1239,6 +1289,17 @@ Dataset must include queries where vector-only retrieval selects:
 - wrong grade
 - expired policy
 - wrong expense category
+
+### Evaluation
+
+Compare both retrieval metrics and RAGAS metrics against Phase 1.
+
+At minimum inspect whether metadata filtering improves:
+
+- Context Precision
+- Context Recall
+- Faithfulness
+- wrong-policy retrieval rate
 
 ### Acceptance criteria
 
@@ -1333,7 +1394,9 @@ Hybrid + Rerank
 - Recall@K
 - MRR
 - nDCG@K
-- context precision
+- RAGAS Context Precision
+- RAGAS Context Recall
+- RAGAS Faithfulness
 - reranking latency
 
 ### Acceptance criteria
@@ -1402,9 +1465,11 @@ Reranked + compressed context
 ### Measure
 
 - context token count
-- context precision
+- RAGAS Context Precision
+- RAGAS Context Recall
+- RAGAS Faithfulness
+- RAGAS Response Relevancy / Answer Relevancy
 - answer completeness
-- faithfulness
 - latency
 
 ### Acceptance criteria
@@ -1416,6 +1481,12 @@ Compression should reduce context size without materially damaging answer qualit
 ## Phase 8 — Advanced RAG Evaluation and Tuning
 
 ### Goal
+
+Compare complete system variants using the same golden dataset and a mandatory RAGAS evaluation pipeline.
+
+Phase 8 is not the point where RAGAS is first introduced.
+
+It is the point where all RAGAS results accumulated from earlier phases are consolidated and compared.
 
 Compare complete system variants.
 
@@ -1431,9 +1502,18 @@ F. Adaptive + Hybrid + Rerank
 G. Adaptive + Hybrid + Rerank + Compression
 ```
 
+For every variant, run:
+
+- deterministic retrieval metrics
+- RAGAS Faithfulness
+- RAGAS Response Relevancy / Answer Relevancy
+- RAGAS Context Precision
+- RAGAS Context Recall
+- operational metrics
+
 Generate one machine-readable report and one human-readable summary.
 
-The project is not complete until architectural choices are supported by evaluation evidence.
+The project is not complete until architectural choices are supported by both retrieval metrics and RAGAS evaluation evidence.
 
 ---
 
@@ -1441,11 +1521,14 @@ The project is not complete until architectural choices are supported by evaluat
 
 Create a version-controlled golden dataset.
 
-Recommended initial size:
+Dataset maturity:
 
 ```text
-60–100 questions
+Phase 1 baseline: 20–30 questions
+Final target:     60–100 questions
 ```
+
+The same stable IDs should be preserved as the dataset grows so phase-to-phase comparisons remain meaningful.
 
 Each case should contain:
 
@@ -1511,25 +1594,134 @@ These metrics must be computed without requiring an LLM.
 
 ---
 
-## 34. Generation Metrics
+## 34. RAGAS Evaluation
 
-Default deterministic checks:
+RAGAS is mandatory.
+
+Every pipeline variant that produces a generated answer must be evaluated through the RAGAS evaluation layer.
+
+### Required RAGAS metrics
+
+#### Faithfulness
+
+Measures whether answer claims are supported by the retrieved context.
+
+Use it to detect generation hallucination even when retrieval was relevant.
+
+#### Response Relevancy / Answer Relevancy
+
+Measures whether the generated response actually addresses the user question.
+
+#### Context Precision
+
+Measures how much retrieved context is relevant rather than noise.
+
+This is especially important when evaluating:
+
+- metadata filtering
+- hybrid retrieval
+- reranking
+- compression
+
+#### Context Recall
+
+Measures whether the retrieved context contains the evidence needed to support the reference answer.
+
+This is especially important when evaluating retrieval coverage.
+
+### RAGAS input mapping
+
+The evaluation adapter must explicitly map Reim Bot data into the fields required by the installed RAGAS API.
+
+Conceptually:
+
+```text
+user question
+      ->
+RAGAS user_input
+
+generated answer
+      ->
+RAGAS response
+
+final retrieved context
+      ->
+RAGAS retrieved_contexts
+
+golden reference answer/facts
+      ->
+RAGAS reference
+```
+
+Do not couple application-domain models directly to a particular RAGAS release schema.
+
+Keep a small evaluation adapter layer.
+
+### Evaluator configuration
+
+Some RAGAS metrics use an evaluator LLM and/or embeddings.
+
+The evaluator configuration must be independent from the production generation model.
+
+Example configuration:
+
+```text
+RAGAS_EVALUATOR_PROVIDER
+RAGAS_EVALUATOR_MODEL
+RAGAS_EMBEDDING_MODEL
+```
+
+This allows experiments such as:
+
+```text
+local application model
++
+stronger evaluator model
+```
+
+without changing the RAG application itself.
+
+### Cost-conscious evaluation profiles
+
+Provide two profiles.
+
+#### Smoke
+
+Small dataset subset.
+
+Used for:
+
+- development regression
+- CI when evaluator resources are available
+- quick comparison
+
+#### Full
+
+Complete golden dataset.
+
+Used for:
+
+- phase completion
+- architecture comparison
+- final report
+
+If a remote evaluator incurs cost, the smoke profile keeps routine evaluation bounded.
+
+### Deterministic companion metrics
+
+RAGAS does not replace:
 
 - citation validity
 - citation coverage
 - expected fact coverage
 - abstention correctness
+- Hit Rate@K
+- Recall@K
+- Precision@K
+- MRR
+- nDCG@K
 
-Optional evaluator-model metrics:
-
-- faithfulness
-- answer relevancy
-- context precision
-- context recall
-
-Ragas may be used for these optional metrics.
-
-If an evaluator model incurs cost, evaluation must support a smaller smoke subset.
+RAGAS and deterministic metrics must be reported together.
 
 ---
 
@@ -1558,14 +1750,14 @@ Learners must observe quality/latency/cost trade-offs.
 Produce a comparison table similar to:
 
 ```text
-Variant                         Recall@5   MRR   nDCG@5   Context Tokens   P95
-Dense                           ...
-Metadata + Dense                ...
-Lexical                         ...
-Hybrid + RRF                    ...
-Hybrid + RRF + Rerank           ...
-Adaptive + Hybrid + Rerank      ...
-+ Compression                   ...
+Variant                      Recall@5   MRR   Faithful   CtxPrec   CtxRecall   RespRel   P95
+Dense                        ...
+Metadata + Dense             ...
+Lexical                      ...
+Hybrid + RRF                 ...
+Hybrid + RRF + Rerank        ...
+Adaptive + Hybrid + Rerank   ...
++ Compression                ...
 ```
 
 The report should also identify failure categories.
@@ -1659,9 +1851,19 @@ Cover:
 
 ### Evaluation regression
 
-Maintain a small fast subset that can run during development.
+Maintain a small fast RAGAS smoke subset that can run during development.
 
-Full evaluation may run manually because local models can be slow.
+The smoke suite must include:
+
+- at least one semantic query
+- one exact-identifier query
+- one metadata-sensitive query
+- one wrong-version trap
+- one abstention case
+
+Full RAGAS evaluation may run manually because evaluator models can be slow.
+
+A phase cannot be marked complete using only the smoke subset.
 
 ---
 
@@ -1680,8 +1882,14 @@ uv run uvicorn app.main:app --reload
 Then learners should be able to run:
 
 ```bash
-uv run python evals/run.py
+# Fast regression
+uv run python evals/run.py --profile smoke
+
+# Full phase evaluation
+uv run python evals/run.py --profile full
 ```
+
+Both profiles run through the RAGAS evaluation layer for answer-quality metrics and the deterministic retrieval-metric layer for ranking metrics.
 
 No Postman configuration should be required for mandatory validation.
 
@@ -1745,6 +1953,16 @@ Reason:
 
 - no additional generation call
 - isolates the context-compression concept
+
+### RAGAS with configurable evaluator
+
+Reason:
+
+- RAGAS remains mandatory and consistent across all phases
+- the framework itself does not require a paid SaaS
+- evaluator model choice remains replaceable
+- learners may use a local evaluator when practical
+- a remote evaluator can be enabled only when desired
 
 ---
 
@@ -1828,10 +2046,11 @@ A phase is complete only when all of the following are true:
 1. the feature works
 2. tests cover it
 3. the evaluation dataset contains cases that exercise it
-4. metrics are recorded
-5. comparison against the previous baseline exists
-6. a learner can inspect intermediate retrieval outputs
-7. the new technique has a documented reason for existing
+4. deterministic retrieval metrics are recorded
+5. required RAGAS metrics are recorded
+6. comparison against the previous baseline exists
+7. a learner can inspect intermediate retrieval outputs
+8. the new technique has a documented reason for existing
 
 If a new technique does not improve the relevant metric, keep the result.
 
@@ -1873,4 +2092,4 @@ Measured Advanced RAG
 
 The final output is not merely a chatbot that answers policy questions.
 
-The final output is a retrieval system whose behavior can be inspected, compared, diagnosed, and justified with metrics.
+The final output is a retrieval system whose behavior can be inspected, compared, diagnosed, and justified with both deterministic retrieval metrics and RAGAS evaluation results.
