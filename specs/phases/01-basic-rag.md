@@ -328,7 +328,15 @@ Include at least:
 
 The difficult cases are intentional baseline failures.
 
-Each case must contain stable IDs.
+Each case must contain at least:
+
+- stable case ID
+- question
+- reference answer or reference facts
+- expected relevant document/chunk/section IDs where applicable
+- should_abstain
+
+These fields are required so deterministic retrieval metrics and RAGAS Context Recall can be reproduced.
 
 ---
 
