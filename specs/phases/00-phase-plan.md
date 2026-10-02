@@ -150,7 +150,22 @@ Mandatory validation must not require:
 - copying data between services
 - undocumented shell commands
 
-### 7. Cumulative data contract
+### 7. Model and evaluation determinism
+
+Every model-backed phase must record:
+
+- model ID
+- model revision/tag/digest where the runtime supports it
+- embedding dimension
+- generation temperature
+- evaluator temperature
+- random seed where supported
+
+Use deterministic settings for benchmark runs whenever the provider/runtime allows them.
+
+Do not use floating model aliases such as `latest` for official phase reports.
+
+### 8. Cumulative data contract
 
 When a phase introduces new metadata/schema fields, it must also update:
 
@@ -253,6 +268,10 @@ Ollama
 ```
 
 The exact chat model must be pinned in the implementation branch documentation and `.env.example`.
+
+For Hugging Face models, pin a model revision where practical.
+
+For Ollama, pin the model tag/digest used by the phase report rather than relying on an unqualified floating alias.
 
 The application and RAGAS evaluator must talk through an OpenAI-compatible adapter so a remote provider can be substituted without changing retrieval code.
 
